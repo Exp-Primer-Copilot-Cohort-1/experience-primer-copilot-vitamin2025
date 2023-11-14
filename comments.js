@@ -65,4 +65,15 @@ app.get("/campgrounds/new", function(req, res){
 });
 
 // 5. SHOW - shows more info about one campground
-app.get("/campgrounds/:id
+app.get("/campgrounds/:id", function(req, res){
+    // find the campground with the provided ID
+    Campground.findById(req.params.id).populate("comments").exec(function(err, foundCampground){
+        if(err){
+            console.log("Error: " + err);
+        } else {
+            console.log(foundCampground);
+            // render the show template with that campground
+            res.render("campgrounds/show", {campground: foundCampground});
+        }
+    });
+});
