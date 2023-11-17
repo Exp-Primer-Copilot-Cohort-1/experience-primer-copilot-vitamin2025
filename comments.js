@@ -1,73 +1,78 @@
-// create web server
-// create router object
+// Create web server
+
 const express = require('express');
-const comments = require('../models/comments');
-const router = express.Router();
+const bodyParser = require('body-parser');
+const cors = require('cors');
+const axios = require('axios');
 
-// get all comments
-router.get('/', (req, res) => {
-    comments.getAll()
-    .then((data) => {
-        res.json(data);
-    })
-    .catch((err) => {
-        res.status(400).json(err);
-    })
+// Create express app
+const app = express();
+
+// Use body parser
+app.use(bodyParser.json());
+
+// Enable cors
+app.use(cors());
+
+// Object to store comments
+const commentsByPostId = {};
+
+// Route to handle post request to create comment
+app.post('/posts/:id/comments', async (req, res) => {
+  const { content } = req.body;
+  const { id: postId } = req.params;
+
+  // Get comments for the post id
+  const comments = commentsByPostId[postId] || [];
+
+  // Push new comment
+  comments.push({ id: comments.length + 1, content, status: 'pending' });
+
+  // Update comments for the post id
+  commentsByPostId[postId] = comments;
+
+  // Emit event to event bus
+  await axios.post('http://event-bus-srv:4005/events', {
+    type: 'CommentCreated',
+    data: { id: comments.length, content, postId, status: 'pending' },
+  });
+
+  // Send response
+  res.status(201).send(comments);
 });
 
-// get comment by id
-router.get('/:id', (req, res) => {
-    comments.getById(req.params.id)
-    .then((data) => {
-        res.json(data);
-    })
-    .catch((err) => {
-        res.status(400).json(err);
-    })
+// Route to handle get request to get comments for a post id
+app.get('/posts/:id/comments', (req, res) => {
+  const { id: postId } = req.params;
+
+  // Get comments for the post id
+  const comments = commentsByPostId[postId] || [];
+
+  // Send response
+  res.send(comments);
 });
 
-// get comments by post id
-router.get('/post/:id', (req, res) => {
-    comments.getByPostId(req.params.id)
-    .then((data) => {
-        res.json(data);
-    })
-    .catch((err) => {
-        res.status(400).json(err);
-    })
-});
+// Route to handle post request to update comment status
+app.post('/events', async (req, res) => {
+  const { type, data } = req.body;
 
-// create comment
-router.post('/', (req, res) => {
-    comments.create(req.body)
-    .then((data) => {
-        res.json(data);
-    })
-    .catch((err) => {
-        res.status(400).json(err);
-    })
-});
+  // Check for comment created event
+  if (type === 'CommentModerated') {
+    const { id, postId, status, content } = data;
 
-// update comment by id
-router.put('/:id', (req, res) => {
-    comments.updateById(req.params.id, req.body)
-    .then((data) => {
-        res.json(data);
-    })
-    .catch((err) => {
-        res.status(400).json(err);
-    })
-});
+    // Get comments for the post id
+    const comments = commentsByPostId[postId];
 
-// delete comment by id
-router.delete('/:id', (req, res) => {
-    comments.deleteById(req.params.id)
-    .then((data) => {
-        res.json(data);
-    })
-    .catch((err) => {
-        res.status(400).json(err);
-    })
-});
+    // Find the comment with the id
+    const comment = comments.find((c) => c.id === id);
 
-module.exports = router;
+    // Update status
+    comment.status = status;
+
+    // Emit event to event bus
+    await axios.post('http://event-bus-srv:4005/events', {
+      type: 'CommentUpdated',
+      data: { id, postId, status, content },
+    });
+    }
+    });
